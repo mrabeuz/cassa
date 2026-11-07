@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="it"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#d3122d">
+<link rel="manifest" href="manifest.json"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png">
+<title>Cassa comune</title>
+<style>
+:root{--bg:#f1f2f5;--card:#fff;--tx:#14171f;--mu:#6b7280;--ac:#d3122d;--ok:#138a4b;--ko:#d3122d;--bd:#dfe2e8}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#1a1d24;--tx:#eef0f4;--mu:#9aa1ad;--ac:#ef4458;--ok:#3fc27d;--ko:#f0626f;--bd:#2a2e38}}
+*{box-sizing:border-box}body{margin:0;font:16px/1.4 system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--tx)}
+header{position:sticky;top:0;z-index:5;background:var(--ac);color:#fff;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:calc(10px + env(safe-area-inset-top)) 14px 10px}
+header h1{font-size:18px;margin:0}header button{background:#fff3;color:#fff;border:0;border-radius:20px;padding:5px 12px;font-size:13px}header .err{background:#000a}
+main{max-width:600px;margin:0 auto;padding:12px 12px 150px}
+.card,.item{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:10px}
+.item{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.big{padding:18px}.big b{display:block;font-size:34px;letter-spacing:-.5px}.big .row{margin-top:6px}
+.row{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}.mu{color:var(--mu)}small{font-size:13px}
+.ok{color:var(--ok)}.ko{color:var(--ko)}h3{margin:0 0 8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{border:1px solid var(--bd);background:transparent;color:var(--mu);border-radius:18px;padding:6px 12px;font-size:14px}
+.chip.paid{background:var(--ok);border-color:var(--ok);color:#fff}
+button,select,input,textarea{font:inherit;color:var(--tx)}
+select,input,textarea{width:100%;padding:10px;border:1px solid var(--bd);border-radius:8px;background:var(--card);margin:4px 0 10px}
+button{cursor:pointer}.pri{background:var(--ac);color:#fff;border:0;border-radius:8px;padding:10px 16px}
+.card>button:not(.pri){background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:9px 12px;margin:2px 2px 2px 0}
+label{display:block;font-size:14px;color:var(--mu)}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--bd);padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;border:0;background:none;padding:12px 2px;font-size:13px;color:var(--mu)}nav .on{color:var(--ac);font-weight:700}
+#fab{position:fixed;right:16px;bottom:calc(66px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:50%;border:0;background:var(--ac);color:#fff;font-size:30px;box-shadow:0 3px 10px #0004}
+dialog{width:min(92vw,420px);border:0;border-radius:14px;padding:16px;background:var(--card);color:var(--tx)}dialog::backdrop{background:#0008}
+.btns{display:flex;gap:8px;justify-content:flex-end}.btns button{border:1px solid var(--bd);background:var(--bg);border-radius:8px;padding:9px 14px}
+.btns .pri{background:var(--ac);border-color:var(--ac);color:#fff}.btns .danger{color:var(--ko);margin-right:auto}
+@media print{nav,#fab,header button{display:none}header{position:static;background:none;color:#000}}
+</style></head><body>
+<header><h1 id="title">Cassa comune</h1><button id="st" onclick="flush()">…</button></header>
+<main id="main"></main><datalist id="cats"></datalist><dialog id="dlg"></dialog>
+<button id="fab" onclick="add()" aria-label="Aggiungi">+</button>
+<nav><button data-t="home" onclick="go('home')">Riepilogo</button><button data-t="mov" onclick="go('mov')">Movimenti</button><button data-t="quote" onclick="go('quote')">Quote</button><button data-t="membri" onclick="go('membri')">Membri</button><button data-t="altro" onclick="go('altro')">Altro</button></nav>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const LS=(k,v)=>{try{if(v===undefined){const x=localStorage.getItem(k);return x?JSON.parse(x):null}localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}};
+let S=LS('state')||{Movimenti:[],Membri:[],Quote:[],Config:{}},Q=LS('queue')||[],CFG=LS('cfg')||{url:'',pin:''},tab='home',fc='',busy=false;
+const uid=()=>'i'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const today=()=>new Date().toLocaleDateString('sv-SE');
+const eur=n=>Number(n||0).toLocaleString('it-IT',{style:'currency',currency:'EUR'});
+const sum=t=>S.Movimenti.filter(m=>m.tipo===t).reduce((a,m)=>a+Number(m.importo||0),0);
+const nm=id=>(S.Membri.find(x=>x.id===id)||{}).nome||'';
+const pay=(q,m)=>S.Movimenti.find(x=>x.quota===q.id&&x.membro===m.id&&x.tipo==='entrata');
+const persist=()=>{LS('state',S);LS('queue',Q)};
+function setStatus(t,err){const b=$('#st');b.textContent=t;b.className=err?'err':''}
+async function api(b){const r=await fetch(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({pin:CFG.pin,...b})});return r.json()}
+async function flush(){
+ if(busy)return;if(!CFG.url){setStatus('Non collegato',true);return}
+ busy=true;setStatus('Sincronizzo…');
+ try{
+  while(Q.length){const r=await api(Q[0]);if(!r.ok)throw new Error(r.error);Q.shift();persist()}
+  const r=await api({action:'load'});if(!r.ok)throw new Error(r.error);
+  S={...r.data,Config:Object.fromEntries(r.data.Config.map(x=>[x.id,x.valore]))};persist();
+  setStatus('Sincronizzato');render();
+ }catch(e){setStatus(Q.length?Q.length+' da inviare':'Offline',true)}
+ busy=false;if(Q.length&&navigator.onLine&&!$('#st').className)flush();
+}
+function save(sh,row){const l=S[sh],i=l.findIndex(x=>x.id===row.id);i>=0?l[i]=row:l.push(row);Q.push({action:'save',sheet:sh,row});persist();render();flush()}
+function remove(sh,id){S[sh]=S[sh].filter(x=>x.id!==id);Q.push({action:'remove',sheet:sh,id});persist();render();flush()}
+function setCfg(k,v){S.Config[k]=v;Q.push({action:'save',sheet:'Config',row:{id:k,valore:v}});persist()}
+function toggle(qi,mi){const q=S.Quote.find(x=>x.id===qi),m=S.Membri.find(x=>x.id===mi),p=pay(q,m);
+ p?remove('Movimenti',p.id):save('Movimenti',{id:uid(),data:today(),tipo:'entrata',importo:Number(q.importo),categoria:q.titolo,membro:m.id,quota:q.id,nota:''})}
+function openForm(title,fields,ok,del){
+ const d=$('#dlg');
+ d.innerHTML=`<h3>${esc(title)}</h3>`+fields.map(f=>{const id='f_'+f.k;let i;
+  if(f.t==='select')i=`<select id="${id}">${f.o.map(([v,l])=>`<option value="${esc(v)}"${v==f.v?' selected':''}>${esc(l)}</option>`).join('')}</select>`;
+  else if(f.t==='textarea')i=`<textarea id="${id}" rows="6">${esc(f.v)}</textarea>`;
+  else i=`<input id="${id}" type="${f.t||'text'}" value="${esc(f.v)}"${f.step?' step="'+f.step+'" inputmode="decimal"':''}${f.l?' list="'+f.l+'"':''}>`;
+  return `<label>${esc(f.n)}${i}</label>`}).join('')+
+  `<div class="btns">${del?'<button id="del" class="danger">Elimina</button>':''}<button id="no">Annulla</button><button id="ok" class="pri">Salva</button></div>`;
+ d.showModal();
+ $('#no').onclick=()=>d.close();
+ $('#ok').onclick=()=>{const v={};fields.forEach(f=>v[f.k]=$('#f_'+f.k).value.trim());if(ok(v)!==false)d.close()};
+ if(del)$('#del').onclick=()=>{if(confirm('Eliminare?')){del();d.close()}};
+}
+function movForm(m){
+ const isNew=!m;m=m||{id:uid(),data:today(),tipo:'uscita',importo:'',categoria:'',membro:'',quota:'',nota:''};
+ openForm(isNew?'Nuovo movimento':'Modifica movimento',[
+  {k:'tipo',n:'Tipo',t:'select',o:[['entrata','Entrata'],['uscita','Uscita']],v:m.tipo},
+  {k:'importo',n:'Importo (€)',t:'number',step:'0.01',v:m.importo},
+  {k:'data',n:'Data',t:'date',v:m.data},
+  {k:'categoria',n:'Categoria',l:'cats',v:m.categoria},
+  {k:'membro',n:'Membro (facoltativo)',t:'select',o:[['','—'],...S.Membri.map(x=>[x.id,x.nome])],v:m.membro},
+  {k:'nota',n:'Nota',v:m.nota}],
+  v=>{const i=parseFloat(v.importo);if(!(i>0)){alert('Inserisci un importo maggiore di zero');return false}save('Movimenti',{...m,...v,importo:i})},
+  isNew?null:()=>remove('Movimenti',m.id));
+}
+function quotaForm(q){const isNew=!q;q=q||{id:uid(),titolo:'',importo:''};
+ openForm(isNew?'Nuova quota':'Modifica quota',[{k:'titolo',n:'Titolo (es. Torneo di Natale)',v:q.titolo},{k:'importo',n:'Importo a testa (€)',t:'number',step:'0.01',v:q.importo}],
+  v=>{if(!v.titolo||!(parseFloat(v.importo)>0)){alert('Inserisci titolo e importo');return false}save('Quote',{...q,titolo:v.titolo,importo:parseFloat(v.importo)})},
+  isNew?null:()=>remove('Quote',q.id))}
+function membroForm(m){const isNew=!m;
+ if(isNew)openForm('Aggiungi '+label(),[{k:'nome',n:'Un nome per riga',t:'textarea',v:''}],v=>{v.nome.split('\n').map(x=>x.trim()).filter(Boolean).forEach(n=>save('Membri',{id:uid(),nome:n}))});
+ else openForm('Modifica',[{k:'nome',n:'Nome',v:m.nome}],v=>{if(!v.nome)return false;save('Membri',{...m,nome:v.nome})},()=>remove('Membri',m.id))}
+const label=()=>S.Config.etichetta||'atlete';
+const go=t=>{tab=t;render();scrollTo(0,0)};
+const add=()=>({home:movForm,mov:movForm,quote:quotaForm,membri:membroForm}[tab])();
+function home(){
+ const e=sum('entrata'),u=sum('uscita');
+ let h=`<div class="card big"><small class="mu">Saldo cassa</small><b>${eur(e-u)}</b><div class="row"><span class="ok">Entrate ${eur(e)}</span><span class="ko">Uscite ${eur(u)}</span></div></div>`;
+ if(!S.Quote.length)h+=`<p class="mu">Per sapere chi ha pagato, crea una quota nella scheda Quote e inserisci i nomi in Membri.</p>`;
+ S.Quote.forEach(q=>{const n=S.Membri.filter(m=>pay(q,m)).length;
+  h+=`<div class="card"><div class="row"><strong>${esc(q.titolo)}</strong><span class="mu">${eur(q.importo)} · pagato ${n} su ${S.Membri.length}</span></div><div class="chips">${S.Membri.map(m=>`<button class="chip ${pay(q,m)?'paid':''}" onclick="toggle('${esc(q.id)}','${esc(m.id)}')">${esc(m.nome)}</button>`).join('')||'<span class="mu">Nessun membro</span>'}</div></div>`});
+ return h}
+function mov(){
+ const cats=[...new Set(S.Movimenti.map(m=>m.categoria).filter(Boolean))];
+ const l=S.Movimenti.filter(m=>!fc||m.categoria===fc).sort((a,b)=>String(b.data).localeCompare(String(a.data)));
+ return `<select onchange="fc=this.value;render()"><option value="">Tutte le categorie</option>${cats.map(c=>`<option${c===fc?' selected':''}>${esc(c)}</option>`).join('')}</select>`+
+ (l.map(m=>`<div class="item" onclick="movForm(S.Movimenti.find(x=>x.id==='${esc(m.id)}'))"><div><strong>${esc(m.categoria||'—')}</strong><br><small class="mu">${esc(m.data)} ${esc(nm(m.membro))} ${esc(m.nota)}</small></div><b class="${m.tipo==='entrata'?'ok':'ko'}">${m.tipo==='entrata'?'+':'−'}${eur(m.importo)}</b></div>`).join('')||'<p class="mu">Nessun movimento. Tocca + per aggiungerne uno.</p>')}
+const quote=()=>S.Quote.map(q=>`<div class="item" onclick="quotaForm(S.Quote.find(x=>x.id==='${esc(q.id)}'))"><strong>${esc(q.titolo)}</strong><b>${eur(q.importo)}</b></div>`).join('')||'<p class="mu">Nessuna quota. Tocca + per crearne una.</p>';
+const membri=()=>`<p class="mu">${esc(label())}: ${S.Membri.length}</p>`+(S.Membri.map(m=>`<div class="item" onclick="membroForm(S.Membri.find(x=>x.id==='${esc(m.id)}'))">${esc(m.nome)}</div>`).join('')||'<p class="mu">Tocca + e incolla l’elenco dei nomi.</p>');
+function altro(){return `<div class="card"><h3>Gruppo</h3><label>Nome del gruppo<input id="s_nome" value="${esc(S.Config.nome)}"></label><label>Etichetta dei membri<input id="s_et" value="${esc(label())}"></label><button class="pri" onclick="saveSet()">Salva</button></div>
+<div class="card"><h3>Collegamento a Google Sheets</h3><label>URL della web app<input id="s_url" value="${esc(CFG.url)}" placeholder="https://script.google.com/macros/s/…/exec"></label><label>PIN<input id="s_pin" type="password" value="${esc(CFG.pin)}"></label><button class="pri" onclick="saveConn()">Salva e sincronizza</button></div>
+<div class="card"><h3>Esporta</h3><button onclick="csv()">CSV per Excel</button><button onclick="bak()">Backup JSON</button><button onclick="tab='home';render();print()">Stampa riepilogo</button></div>`}
+function saveSet(){setCfg('nome',$('#s_nome').value.trim());setCfg('etichetta',$('#s_et').value.trim()||'atlete');render();flush()}
+function saveConn(){CFG={url:$('#s_url').value.trim(),pin:$('#s_pin').value.trim()};LS('cfg',CFG);flush()}
+function dl(n,t,ty){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:ty}));a.download=n;a.click()}
+function csv(){const r=[['Data','Tipo','Importo','Categoria','Membro','Nota'],...[...S.Movimenti].sort((a,b)=>String(a.data).localeCompare(String(b.data))).map(m=>[m.data,m.tipo,String(m.importo).replace('.',','),m.categoria,nm(m.membro),m.nota])];
+ dl('cassa.csv','\ufeff'+r.map(x=>x.map(c=>'"'+String(c??'').replace(/"/g,'""')+'"').join(';')).join('\r\n'),'text/csv')}
+const bak=()=>dl('cassa-backup-'+today()+'.json',JSON.stringify(S,null,1),'application/json');
+function render(){
+ const n=S.Config.nome||'Cassa comune';$('#title').textContent=n;document.title=n;
+ $('#cats').innerHTML=[...new Set(['Quota iscrizione','Trasferta','Palestra','Merenda','Divise','Torneo','Sponsor',...S.Movimenti.map(m=>m.categoria)].filter(Boolean))].map(c=>`<option value="${esc(c)}">`).join('');
+ $('#main').innerHTML={home,mov,quote,membri,altro}[tab]();
+ document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
+ $('#fab').style.display=tab==='altro'?'none':'';
+}
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
+addEventListener('online',flush);
+render();if(CFG.url)flush();else{setStatus('Non collegato',true);tab='altro';render()}
+</script></body></html>
