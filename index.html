@@ -9,7 +9,7 @@
 @media(prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#1a1d24;--tx:#eef0f4;--mu:#9aa1ad;--ac:#ef4458;--ok:#3fc27d;--ko:#f0626f;--bd:#2a2e38}}
 *{box-sizing:border-box}body{margin:0;font:16px/1.4 system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--tx)}
 header{position:sticky;top:0;z-index:5;background:var(--ac);color:#fff;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:calc(10px + env(safe-area-inset-top)) 14px 10px}
-header h1{font-size:18px;margin:0}header button{background:#fff3;color:#fff;border:0;border-radius:20px;padding:5px 12px;font-size:13px}header .err{background:#000a}
+header select{width:auto;max-width:60%;margin:0;background:#fff3;color:#fff;border:0;font-weight:700;font-size:17px}header option{color:#000}header button{background:#fff3;color:#fff;border:0;border-radius:20px;padding:5px 12px;font-size:13px}header .err{background:#000a}
 main{max-width:600px;margin:0 auto;padding:12px 12px 150px}
 .card,.item{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:10px}
 .item{display:flex;justify-content:space-between;align-items:center;gap:10px}
@@ -30,24 +30,35 @@ nav button{flex:1;border:0;background:none;padding:12px 2px;font-size:13px;color
 dialog{width:min(92vw,420px);border:0;border-radius:14px;padding:16px;background:var(--card);color:var(--tx)}dialog::backdrop{background:#0008}
 .btns{display:flex;gap:8px;justify-content:flex-end}.btns button{border:1px solid var(--bd);background:var(--bg);border-radius:8px;padding:9px 14px}
 .btns .pri{background:var(--ac);border-color:var(--ac);color:#fff}.btns .danger{color:var(--ko);margin-right:auto}
-@media print{nav,#fab,header button{display:none}header{position:static;background:none;color:#000}}
+.chk label{display:flex;gap:10px;align-items:center;color:var(--tx);font-size:16px;padding:3px 0}.chk input{width:auto;margin:0}.fld{font-size:14px;color:var(--mu);margin-bottom:10px}.lnk{background:none;border:0;color:var(--ac);padding:4px 6px;font-size:14px}.back{background:none;border:0;color:var(--ac);padding:4px 0 10px;font-size:16px}progress{width:100%;height:6px;accent-color:var(--ok);margin-top:6px}.tap{cursor:pointer}
+@media print{nav,#fab,header button,#cs{display:none}#pt{display:block!important}header{position:static;background:none;color:#000}}
 </style></head><body>
-<header><h1 id="title">Cassa comune</h1><button id="st" onclick="flush()">…</button></header>
-<main id="main"></main><datalist id="cats"></datalist><dialog id="dlg"></dialog>
+<header><select id="cs" onchange="sw(this.value)"></select><h1 id="pt" style="display:none"></h1><button id="st" onclick="flush()">…</button></header>
+<main id="main"></main><dialog id="dlg"></dialog>
 <button id="fab" onclick="add()" aria-label="Aggiungi">+</button>
 <nav><button data-t="home" onclick="go('home')">Riepilogo</button><button data-t="mov" onclick="go('mov')">Movimenti</button><button data-t="quote" onclick="go('quote')">Quote</button><button data-t="membri" onclick="go('membri')">Membri</button><button data-t="altro" onclick="go('altro')">Altro</button></nav>
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const LS=(k,v)=>{try{if(v===undefined){const x=localStorage.getItem(k);return x?JSON.parse(x):null}localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}};
-let S=LS('state')||{Movimenti:[],Membri:[],Quote:[],Config:{}},Q=LS('queue')||[],CFG=LS('cfg')||{url:'',pin:''},tab='home',fc='',busy=false;
+const empty=()=>({Movimenti:[],Membri:[],Quote:[],Categorie:[],Config:{}});
+let casse=LS('casse');
+if(!casse){const o=LS('cfg')||{url:'',pin:''},st=LS('state'),id='i'+Date.now().toString(36);casse=[{id,nome:(st&&st.Config&&st.Config.nome)||'La mia cassa',url:o.url,pin:o.pin}];LS('casse',casse);if(st)LS('s_'+id,st);if(LS('queue'))LS('q_'+id,LS('queue'));LS('cur',id)}
+let cur,CFG,S,Q,tab='home',fc='',cq='',busy=false;
+function loadCassa(id){cur=id;LS('cur',id);CFG=casse.find(x=>x.id===id);S={...empty(),...(LS('s_'+id)||{})};Q=LS('q_'+id)||[];fc=''}
+loadCassa(casse.find(x=>x.id===LS('cur'))?LS('cur'):casse[0].id);
 const uid=()=>'i'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const today=()=>new Date().toLocaleDateString('sv-SE');
 const eur=n=>Number(n||0).toLocaleString('it-IT',{style:'currency',currency:'EUR'});
-const sum=t=>S.Movimenti.filter(m=>m.tipo===t).reduce((a,m)=>a+Number(m.importo||0),0);
+const sum=(t,l=S.Movimenti)=>l.filter(m=>m.tipo===t).reduce((a,m)=>a+Number(m.importo||0),0);
 const nm=id=>(S.Membri.find(x=>x.id===id)||{}).nome||'';
+const nq=id=>(S.Quote.find(x=>x.id===id)||{}).titolo||'';
+const label=()=>S.Config.etichetta||'atlete';
 const pay=(q,m)=>S.Movimenti.find(x=>x.quota===q.id&&x.membro===m.id&&x.tipo==='entrata');
-const persist=()=>{LS('state',S);LS('queue',Q)};
+const qm=q=>{const ids=String(q.membri||'').split(',').filter(Boolean);return ids.length?S.Membri.filter(m=>ids.includes(m.id)):S.Membri};
+const qs=q=>{const P=qm(q),mv=S.Movimenti.filter(x=>x.quota===q.id);return{P,mv,n:P.filter(m=>pay(q,m)).length,inc:sum('entrata',mv),spe:sum('uscita',mv),dov:P.length*Number(q.importo)}};
+const persist=()=>{LS('s_'+cur,S);LS('q_'+cur,Q)};
+const wait=()=>busy&&(alert('Sincronizzazione in corso, riprova tra un istante'),render(),true);
 function setStatus(t,err){const b=$('#st');b.textContent=t;b.className=err?'err':''}
 async function api(b){const r=await fetch(CFG.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({pin:CFG.pin,...b})});return r.json()}
 async function flush(){
@@ -56,82 +67,108 @@ async function flush(){
  try{
   while(Q.length){const r=await api(Q[0]);if(!r.ok)throw new Error(r.error);Q.shift();persist()}
   const r=await api({action:'load'});if(!r.ok)throw new Error(r.error);
-  S={...r.data,Config:Object.fromEntries(r.data.Config.map(x=>[x.id,x.valore]))};persist();
+  S={...empty(),...r.data,Config:Object.fromEntries(r.data.Config.map(x=>[x.id,x.valore]))};persist();
   setStatus('Sincronizzato');render();
  }catch(e){setStatus(Q.length?Q.length+' da inviare':'Offline',true)}
  busy=false;if(Q.length&&navigator.onLine&&!$('#st').className)flush();
 }
+function sw(id){if(wait())return;loadCassa(id);tab='home';render();CFG.url?flush():setStatus('Non collegato',true)}
 function save(sh,row){const l=S[sh],i=l.findIndex(x=>x.id===row.id);i>=0?l[i]=row:l.push(row);Q.push({action:'save',sheet:sh,row});persist();render();flush()}
 function remove(sh,id){S[sh]=S[sh].filter(x=>x.id!==id);Q.push({action:'remove',sheet:sh,id});persist();render();flush()}
 function setCfg(k,v){S.Config[k]=v;Q.push({action:'save',sheet:'Config',row:{id:k,valore:v}});persist()}
 function toggle(qi,mi){const q=S.Quote.find(x=>x.id===qi),m=S.Membri.find(x=>x.id===mi),p=pay(q,m);
- p?remove('Movimenti',p.id):save('Movimenti',{id:uid(),data:today(),tipo:'entrata',importo:Number(q.importo),categoria:q.titolo,membro:m.id,quota:q.id,nota:''})}
+ p?remove('Movimenti',p.id):save('Movimenti',{id:uid(),data:today(),tipo:'entrata',importo:Number(q.importo),categoria:'',membro:m.id,quota:q.id,nota:''})}
 function openForm(title,fields,ok,del){
  const d=$('#dlg');
- d.innerHTML=`<h3>${esc(title)}</h3>`+fields.map(f=>{const id='f_'+f.k;let i;
+ d.innerHTML=`<h3>${esc(title)}</h3>`+fields.map(f=>{const id='f_'+f.k;
+  if(f.t==='checks')return `<div class="fld">${esc(f.n)} <button class="lnk" onclick="document.querySelectorAll('#${id} input').forEach(x=>x.checked=true)">Tutti</button><button class="lnk" onclick="document.querySelectorAll('#${id} input').forEach(x=>x.checked=false)">Nessuno</button><div id="${id}" class="chk">${f.o.map(([v,l])=>`<label><input type="checkbox" value="${esc(v)}"${f.v.includes(v)?' checked':''}>${esc(l)}</label>`).join('')||'<span>Nessun membro</span>'}</div></div>`;
+  let i;
   if(f.t==='select')i=`<select id="${id}">${f.o.map(([v,l])=>`<option value="${esc(v)}"${v==f.v?' selected':''}>${esc(l)}</option>`).join('')}</select>`;
   else if(f.t==='textarea')i=`<textarea id="${id}" rows="6">${esc(f.v)}</textarea>`;
-  else i=`<input id="${id}" type="${f.t||'text'}" value="${esc(f.v)}"${f.step?' step="'+f.step+'" inputmode="decimal"':''}${f.l?' list="'+f.l+'"':''}>`;
+  else i=`<input id="${id}" type="${f.t||'text'}" value="${esc(f.v)}"${f.step?' step="'+f.step+'" inputmode="decimal"':''}>`;
   return `<label>${esc(f.n)}${i}</label>`}).join('')+
   `<div class="btns">${del?'<button id="del" class="danger">Elimina</button>':''}<button id="no">Annulla</button><button id="ok" class="pri">Salva</button></div>`;
  d.showModal();
  $('#no').onclick=()=>d.close();
- $('#ok').onclick=()=>{const v={};fields.forEach(f=>v[f.k]=$('#f_'+f.k).value.trim());if(ok(v)!==false)d.close()};
+ $('#ok').onclick=()=>{const v={};fields.forEach(f=>v[f.k]=f.t==='checks'?[...$('#f_'+f.k).querySelectorAll('input:checked')].map(x=>x.value):$('#f_'+f.k).value.trim());if(ok(v)!==false)d.close()};
  if(del)$('#del').onclick=()=>{if(confirm('Eliminare?')){del();d.close()}};
 }
-function movForm(m){
- const isNew=!m;m=m||{id:uid(),data:today(),tipo:'uscita',importo:'',categoria:'',membro:'',quota:'',nota:''};
+function movForm(m,pre){
+ const isNew=!m;m=m||{id:uid(),data:today(),tipo:'uscita',importo:'',categoria:'',membro:'',quota:'',nota:'',...pre};
+ const cats=S.Categorie.map(c=>c.nome);if(m.categoria&&!cats.includes(m.categoria))cats.push(m.categoria);
  openForm(isNew?'Nuovo movimento':'Modifica movimento',[
   {k:'tipo',n:'Tipo',t:'select',o:[['entrata','Entrata'],['uscita','Uscita']],v:m.tipo},
   {k:'importo',n:'Importo (€)',t:'number',step:'0.01',v:m.importo},
   {k:'data',n:'Data',t:'date',v:m.data},
-  {k:'categoria',n:'Categoria',l:'cats',v:m.categoria},
+  {k:'categoria',n:'Categoria',t:'select',o:[['','—'],...cats.map(c=>[c,c]),['__new','+ Nuova categoria…']],v:m.categoria},
+  {k:'quota',n:'Quota (facoltativo)',t:'select',o:[['','Nessuna'],...S.Quote.map(x=>[x.id,x.titolo])],v:m.quota},
   {k:'membro',n:'Membro (facoltativo)',t:'select',o:[['','—'],...S.Membri.map(x=>[x.id,x.nome])],v:m.membro},
   {k:'nota',n:'Nota',v:m.nota}],
   v=>{const i=parseFloat(v.importo);if(!(i>0)){alert('Inserisci un importo maggiore di zero');return false}save('Movimenti',{...m,...v,importo:i})},
   isNew?null:()=>remove('Movimenti',m.id));
+ $('#f_categoria').onchange=function(){if(this.value!=='__new')return;
+  const n=(prompt('Nome della categoria')||'').trim();if(!n){this.value='';return}
+  let o=[...this.options].find(x=>x.value===n);
+  if(!o){save('Categorie',{id:uid(),nome:n});o=new Option(n,n);this.add(o,this.options[this.options.length-1])}
+  this.value=n};
 }
-function quotaForm(q){const isNew=!q;q=q||{id:uid(),titolo:'',importo:''};
- openForm(isNew?'Nuova quota':'Modifica quota',[{k:'titolo',n:'Titolo (es. Torneo di Natale)',v:q.titolo},{k:'importo',n:'Importo a testa (€)',t:'number',step:'0.01',v:q.importo}],
-  v=>{if(!v.titolo||!(parseFloat(v.importo)>0)){alert('Inserisci titolo e importo');return false}save('Quote',{...q,titolo:v.titolo,importo:parseFloat(v.importo)})},
-  isNew?null:()=>remove('Quote',q.id))}
-function membroForm(m){const isNew=!m;
- if(isNew)openForm('Aggiungi '+label(),[{k:'nome',n:'Un nome per riga',t:'textarea',v:''}],v=>{v.nome.split('\n').map(x=>x.trim()).filter(Boolean).forEach(n=>save('Membri',{id:uid(),nome:n}))});
+function quotaForm(q){const isNew=!q;q=q||{id:uid(),titolo:'',importo:'',membri:''};
+ const sel=String(q.membri||'').split(',').filter(Boolean);
+ openForm(isNew?'Nuova quota':'Modifica quota',[{k:'titolo',n:'Titolo (es. Torneo di Natale)',v:q.titolo},{k:'importo',n:'Importo a testa (€)',t:'number',step:'0.01',v:q.importo},{k:'membri',n:'Chi partecipa',t:'checks',o:S.Membri.map(m=>[m.id,m.nome]),v:sel.length?sel:S.Membri.map(m=>m.id)}],
+  v=>{if(!v.titolo||!(parseFloat(v.importo)>0)){alert('Inserisci titolo e importo');return false}
+   if(S.Membri.length&&!v.membri.length){alert('Seleziona almeno un membro');return false}
+   save('Quote',{...q,titolo:v.titolo,importo:parseFloat(v.importo),membri:v.membri.length===S.Membri.length?'':v.membri.join(',')})},
+  isNew?null:()=>{remove('Quote',q.id);if(tab==='det')go('home')})}
+function membroForm(m){
+ if(!m)openForm('Aggiungi '+label(),[{k:'nome',n:'Un nome per riga',t:'textarea',v:''}],v=>{v.nome.split('\n').map(x=>x.trim()).filter(Boolean).forEach(n=>save('Membri',{id:uid(),nome:n}))});
  else openForm('Modifica',[{k:'nome',n:'Nome',v:m.nome}],v=>{if(!v.nome)return false;save('Membri',{...m,nome:v.nome})},()=>remove('Membri',m.id))}
-const label=()=>S.Config.etichetta||'atlete';
+function catForm(c){const isNew=!c;
+ openForm(isNew?'Nuova categoria':'Modifica categoria',[{k:'nome',n:'Nome',v:c?c.nome:''}],v=>{if(!v.nome)return false;
+  if(!isNew&&v.nome!==c.nome)S.Movimenti.filter(m=>m.categoria===c.nome).forEach(m=>save('Movimenti',{...m,categoria:v.nome}));
+  save('Categorie',{id:isNew?uid():c.id,nome:v.nome})},isNew?null:()=>remove('Categorie',c.id))}
+function suggerite(){const have=S.Categorie.map(c=>c.nome);
+ [...new Set(['Quote','Trasferte','Palestra','Merenda','Divise','Tornei','Sponsor','Regali','Altro',...S.Movimenti.map(m=>m.categoria)].filter(Boolean))].filter(n=>!have.includes(n)).forEach(n=>save('Categorie',{id:uid(),nome:n}))}
 const go=t=>{tab=t;render();scrollTo(0,0)};
-const add=()=>({home:movForm,mov:movForm,quote:quotaForm,membri:membroForm}[tab])();
+const openQ=id=>{cq=id;go('det')};
+function add(){if(tab==='quote')quotaForm();else if(tab==='membri')membroForm();else movForm(null,tab==='det'?{quota:cq}:null)}
+const movList=l=>[...l].sort((a,b)=>String(b.data).localeCompare(String(a.data))).map(m=>`<div class="item" onclick="movForm(S.Movimenti.find(x=>x.id==='${esc(m.id)}'))"><div><strong>${esc(m.categoria||nq(m.quota)||'—')}</strong><br><small class="mu">${esc(m.data)} ${esc(nm(m.membro))} ${esc(m.categoria?nq(m.quota):'')} ${esc(m.nota)}</small></div><b class="${m.tipo==='entrata'?'ok':'ko'}">${m.tipo==='entrata'?'+':'−'}${eur(m.importo)}</b></div>`).join('')||'<p class="mu">Nessun movimento.</p>';
 function home(){
  const e=sum('entrata'),u=sum('uscita');
  let h=`<div class="card big"><small class="mu">Saldo cassa</small><b>${eur(e-u)}</b><div class="row"><span class="ok">Entrate ${eur(e)}</span><span class="ko">Uscite ${eur(u)}</span></div></div>`;
- if(!S.Quote.length)h+=`<p class="mu">Per sapere chi ha pagato, crea una quota nella scheda Quote e inserisci i nomi in Membri.</p>`;
- S.Quote.forEach(q=>{const n=S.Membri.filter(m=>pay(q,m)).length;
-  h+=`<div class="card"><div class="row"><strong>${esc(q.titolo)}</strong><span class="mu">${eur(q.importo)} · pagato ${n} su ${S.Membri.length}</span></div><div class="chips">${S.Membri.map(m=>`<button class="chip ${pay(q,m)?'paid':''}" onclick="toggle('${esc(q.id)}','${esc(m.id)}')">${esc(m.nome)}</button>`).join('')||'<span class="mu">Nessun membro</span>'}</div></div>`});
- return h}
+ if(!S.Quote.length)h+=`<p class="mu">Crea una quota nella scheda Quote per tenere traccia di chi ha pagato.</p>`;
+ return h+S.Quote.map(q=>{const t=qs(q),s=t.inc-t.spe;return `<div class="card tap" onclick="openQ('${esc(q.id)}')"><div class="row"><strong>${esc(q.titolo)}</strong><b class="${s>=0?'ok':'ko'}">${eur(s)}</b></div><small class="mu">Pagato ${t.n} su ${t.P.length} · incassato ${eur(t.inc)} su ${eur(t.dov)}</small><progress value="${t.n}" max="${t.P.length||1}"></progress></div>`}).join('')}
+function det(){
+ const q=S.Quote.find(x=>x.id===cq);if(!q){tab='home';return home()}
+ const t=qs(q);
+ return `<button class="back" onclick="go('home')">‹ Indietro</button><div class="card big"><small class="mu">${esc(q.titolo)} · ${eur(q.importo)} a testa</small><b>${eur(t.inc-t.spe)}</b><div class="row"><span class="ok">Incassato ${eur(t.inc)} su ${eur(t.dov)}</span><span class="ko">Speso ${eur(t.spe)}</span></div></div>
+ <div class="card"><div class="row"><strong>Pagato ${t.n} su ${t.P.length}</strong><button class="lnk" onclick="quotaForm(S.Quote.find(x=>x.id==='${esc(q.id)}'))">Modifica quota</button></div><div class="chips">${t.P.map(m=>`<button class="chip ${pay(q,m)?'paid':''}" onclick="toggle('${esc(q.id)}','${esc(m.id)}')">${esc(m.nome)}</button>`).join('')||'<span class="mu">Nessun membro</span>'}</div></div>
+ <div class="row"><h3>Movimenti</h3><button class="lnk" onclick="movForm(null,{quota:cq})">+ Aggiungi</button></div>${movList(t.mv)}`}
 function mov(){
  const cats=[...new Set(S.Movimenti.map(m=>m.categoria).filter(Boolean))];
- const l=S.Movimenti.filter(m=>!fc||m.categoria===fc).sort((a,b)=>String(b.data).localeCompare(String(a.data)));
- return `<select onchange="fc=this.value;render()"><option value="">Tutte le categorie</option>${cats.map(c=>`<option${c===fc?' selected':''}>${esc(c)}</option>`).join('')}</select>`+
- (l.map(m=>`<div class="item" onclick="movForm(S.Movimenti.find(x=>x.id==='${esc(m.id)}'))"><div><strong>${esc(m.categoria||'—')}</strong><br><small class="mu">${esc(m.data)} ${esc(nm(m.membro))} ${esc(m.nota)}</small></div><b class="${m.tipo==='entrata'?'ok':'ko'}">${m.tipo==='entrata'?'+':'−'}${eur(m.importo)}</b></div>`).join('')||'<p class="mu">Nessun movimento. Tocca + per aggiungerne uno.</p>')}
-const quote=()=>S.Quote.map(q=>`<div class="item" onclick="quotaForm(S.Quote.find(x=>x.id==='${esc(q.id)}'))"><strong>${esc(q.titolo)}</strong><b>${eur(q.importo)}</b></div>`).join('')||'<p class="mu">Nessuna quota. Tocca + per crearne una.</p>';
+ return `<select onchange="fc=this.value;render()"><option value="">Tutte le categorie</option>${cats.map(c=>`<option${c===fc?' selected':''}>${esc(c)}</option>`).join('')}</select>`+movList(S.Movimenti.filter(m=>!fc||m.categoria===fc))}
+const quote=()=>S.Quote.map(q=>`<div class="item" onclick="openQ('${esc(q.id)}')"><div><strong>${esc(q.titolo)}</strong><br><small class="mu">${qm(q).length} partecipanti</small></div><b>${eur(q.importo)}</b></div>`).join('')||'<p class="mu">Nessuna quota. Tocca + per crearne una.</p>';
 const membri=()=>`<p class="mu">${esc(label())}: ${S.Membri.length}</p>`+(S.Membri.map(m=>`<div class="item" onclick="membroForm(S.Membri.find(x=>x.id==='${esc(m.id)}'))">${esc(m.nome)}</div>`).join('')||'<p class="mu">Tocca + e incolla l’elenco dei nomi.</p>');
-function altro(){return `<div class="card"><h3>Gruppo</h3><label>Nome del gruppo<input id="s_nome" value="${esc(S.Config.nome)}"></label><label>Etichetta dei membri<input id="s_et" value="${esc(label())}"></label><button class="pri" onclick="saveSet()">Salva</button></div>
-<div class="card"><h3>Collegamento a Google Sheets</h3><label>URL della web app<input id="s_url" value="${esc(CFG.url)}" placeholder="https://script.google.com/macros/s/…/exec"></label><label>PIN<input id="s_pin" type="password" value="${esc(CFG.pin)}"></label><button class="pri" onclick="saveConn()">Salva e sincronizza</button></div>
+function altro(){return `<div class="card"><h3>Questa cassa</h3><label>Nome<input id="s_nome" value="${esc(CFG.nome)}"></label><label>Etichetta dei membri<input id="s_et" value="${esc(label())}"></label><label>URL della web app<input id="s_url" value="${esc(CFG.url)}" placeholder="https://script.google.com/macros/s/…/exec"></label><label>PIN<input id="s_pin" type="password" value="${esc(CFG.pin)}"></label><button class="pri" onclick="saveConn()">Salva e sincronizza</button></div>
+<div class="card"><h3>Casse</h3><button onclick="newCassa()">+ Nuova cassa</button>${casse.length>1?'<button onclick="delCassa()">Rimuovi questa cassa dal telefono</button>':''}</div>
+<div class="card"><h3>Categorie</h3>${S.Categorie.map(c=>`<div class="item" onclick="catForm(S.Categorie.find(x=>x.id==='${esc(c.id)}'))">${esc(c.nome)}</div>`).join('')||'<p class="mu">Nessuna categoria.</p>'}<button onclick="catForm()">+ Nuova categoria</button><button onclick="suggerite()">Aggiungi suggerite e già usate</button></div>
 <div class="card"><h3>Esporta</h3><button onclick="csv()">CSV per Excel</button><button onclick="bak()">Backup JSON</button><button onclick="tab='home';render();print()">Stampa riepilogo</button></div>`}
-function saveSet(){setCfg('nome',$('#s_nome').value.trim());setCfg('etichetta',$('#s_et').value.trim()||'atlete');render();flush()}
-function saveConn(){CFG={url:$('#s_url').value.trim(),pin:$('#s_pin').value.trim()};LS('cfg',CFG);flush()}
+function saveConn(){CFG.nome=$('#s_nome').value.trim()||'Cassa';CFG.url=$('#s_url').value.trim();CFG.pin=$('#s_pin').value.trim();LS('casse',casse);
+ const et=$('#s_et').value.trim()||'atlete';if(et!==label())setCfg('etichetta',et);render();flush()}
+function newCassa(){if(wait())return;const n=(prompt('Nome della nuova cassa')||'').trim();if(!n)return;const c={id:uid(),nome:n,url:'',pin:''};casse.push(c);LS('casse',casse);loadCassa(c.id);tab='altro';render();setStatus('Non collegato',true)}
+function delCassa(){if(wait()||!confirm('Rimuovere questa cassa dal telefono? I dati nel foglio Google restano.'))return;casse=casse.filter(x=>x.id!==cur);LS('casse',casse);try{localStorage.removeItem('s_'+cur);localStorage.removeItem('q_'+cur)}catch(e){}sw(casse[0].id)}
 function dl(n,t,ty){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:ty}));a.download=n;a.click()}
-function csv(){const r=[['Data','Tipo','Importo','Categoria','Membro','Nota'],...[...S.Movimenti].sort((a,b)=>String(a.data).localeCompare(String(b.data))).map(m=>[m.data,m.tipo,String(m.importo).replace('.',','),m.categoria,nm(m.membro),m.nota])];
- dl('cassa.csv','\ufeff'+r.map(x=>x.map(c=>'"'+String(c??'').replace(/"/g,'""')+'"').join(';')).join('\r\n'),'text/csv')}
-const bak=()=>dl('cassa-backup-'+today()+'.json',JSON.stringify(S,null,1),'application/json');
+function csv(){const r=[['Data','Tipo','Importo','Categoria','Quota','Membro','Nota'],...[...S.Movimenti].sort((a,b)=>String(a.data).localeCompare(String(b.data))).map(m=>[m.data,m.tipo,String(m.importo).replace('.',','),m.categoria,nq(m.quota),nm(m.membro),m.nota])];
+ dl(CFG.nome+'.csv','\ufeff'+r.map(x=>x.map(c=>'"'+String(c??'').replace(/"/g,'""')+'"').join(';')).join('\r\n'),'text/csv')}
+const bak=()=>dl(CFG.nome+'-backup-'+today()+'.json',JSON.stringify(S,null,1),'application/json');
 function render(){
- const n=S.Config.nome||'Cassa comune';$('#title').textContent=n;document.title=n;
- $('#cats').innerHTML=[...new Set(['Quota iscrizione','Trasferta','Palestra','Merenda','Divise','Torneo','Sponsor',...S.Movimenti.map(m=>m.categoria)].filter(Boolean))].map(c=>`<option value="${esc(c)}">`).join('');
- $('#main').innerHTML={home,mov,quote,membri,altro}[tab]();
- document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
+ document.title=CFG.nome;$('#pt').textContent=CFG.nome;
+ $('#cs').innerHTML=casse.map(c=>`<option value="${esc(c.id)}"${c.id===cur?' selected':''}>${esc(c.nome)}</option>`).join('');
+ $('#main').innerHTML={home,det,mov,quote,membri,altro}[tab]();
+ document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===(tab==='det'?'home':tab)));
  $('#fab').style.display=tab==='altro'?'none':'';
 }
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
 addEventListener('online',flush);
-render();if(CFG.url)flush();else{setStatus('Non collegato',true);tab='altro';render()}
+if(!CFG.url)tab='altro';
+render();CFG.url?flush():setStatus('Non collegato',true);
 </script></body></html>
